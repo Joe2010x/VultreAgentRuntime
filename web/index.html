@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CSV Analyst</title>
+<style>
+:root { color-scheme: light; font-family: system-ui, sans-serif; color: #182c30; background: #edf4f2; }
+* { box-sizing: border-box; }
+body { margin: 0; }
+main { max-width: 1080px; margin: auto; padding: 56px 24px; }
+header { margin-bottom: 30px; }
+h1 { font-size: clamp(2rem, 7vw, 3.8rem); letter-spacing: -.06em; margin: 0; }
+h2 { margin: 0 0 18px; font-size: 1.2rem; }
+p { color: #476064; line-height: 1.5; }
+.workspace { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.65fr); gap: 20px; align-items: start; }
+section { background: white; padding: 24px; border: 1px solid #cadbd7; border-radius: 18px; }
+label { display: block; font-weight: 650; margin-top: 18px; }
+input { width: 100%; margin-top: 8px; font: inherit; }
+input[type=text] { color: #335257; background: #edf4f2; border: 1px solid #cadbd7; border-radius: 8px; padding: 10px; }
+small { display: block; color: #476064; margin-top: 8px; }
+button { font: inherit; font-weight: 650; cursor: pointer; border: 1px solid #176b73; border-radius: 8px; padding: 9px 12px; margin-top: 18px; background: #176b73; color: white; }
+button[type=button] { background: white; color: #176b73; }
+button:disabled { opacity: .55; cursor: default; }
+img { width: 100%; }
+details { border-top: 1px solid #cadbd7; padding: 12px 0; }
+summary { cursor: pointer; }
+pre { white-space: pre-wrap; overflow-wrap: anywhere; background: #edf4f2; padding: 12px; border-radius: 8px; }
+@media (max-width: 720px) { .workspace { grid-template-columns: 1fr; } main { padding-top: 30px; } }
+</style>
+</head>
+<body>
+<main>
+<header>
+  <h1>CSV Analyst</h1>
+  <p>Run a sales analysis in an isolated container and see the code and output.</p>
+</header>
+<div class="workspace">
+  <section>
+    <h2>Sales data</h2>
+    <form>
+      <label for="csv">Upload a CSV</label>
+      <input id="csv" type="file" accept=".csv,text/csv">
+      <small>UTF-8 CSV with column headers. Up to 1 MiB.</small>
+      <label for="question">Analysis question</label>
+      <input id="question" type="text" maxlength="500" placeholder="Which product led sales each month?">
+      <small>Leave blank to run the built-in monthly sales chart.</small>
+      <button id="upload" type="submit" disabled>Analyze upload</button>
+      <button id="sample" type="button">Use sample data</button>
+    </form>
+    <button id="containment" type="button">Test sandbox timeout</button>
+  </section>
+  <section aria-labelledby="results">
+    <h2 id="results">Results</h2>
+    <p id="status" role="status">Use sample data or upload a sales CSV to run the analysis.</p>
+    <img id="chart" alt="Bar chart showing the highest revenue product for each month" hidden>
+    <details id="code-panel" hidden><summary>Python code</summary><pre id="code"></pre></details>
+    <details id="log-panel" hidden><summary>Run log</summary><pre id="log"></pre></details>
+  </section>
+</div>
+</main>
+<script>
+const form = document.querySelector('form');
+const csv = document.querySelector('#csv');
+const upload = document.querySelector('#upload');
+const sample = document.querySelector('#sample');
+const containment = document.querySelector('#containment');
+const question = document.querySelector('#question');
+const runStatus = document.querySelector('#status');
+const chart = document.querySelector('#chart');
+const code = document.querySelector('#code');
+const log = document.querySelector('#log');
+const codePanel = document.querySelector('#code-panel');
+const logPanel = document.querySelector('#log-panel');
+
+async function analyze(file, checkContainment = false) {
+  if (file && (!file.size || file.size > 1024 * 1024)) {
+    runStatus.textContent = 'Choose a nonempty CSV file up to 1 MiB.';
+    return;
+  }
+  question.disabled = csv.disabled = upload.disabled = sample.disabled = containment.disabled = true;
+  chart.hidden = codePanel.hidden = logPanel.hidden = true;
+  runStatus.textContent = checkContainment ? 'Checking sandbox and enforcing timeout…' : 'Running analysis…';
+  try {
+    const headers = file ? { 'Content-Type': 'text/csv' } : {};
+    if (!checkContainment && question.value.trim()) {
+      headers['X-Analysis-Question'] = encodeURIComponent(question.value.trim());
+    }
+    const response = await fetch(checkContainment ? '/api/containment' : '/api/chart', {
+      method: 'POST',
+      headers,
+      body: file || undefined
+    });
+    const result = await response.json();
+    code.textContent = result.code || '';
+    log.textContent = result.log || '';
+    codePanel.hidden = !result.code;
+    logPanel.hidden = !result.log;
+    logPanel.open = !response.ok;
+    if (!response.ok) throw new Error(result.error || result.detail || 'Analysis failed.');
+    if (checkContainment) {
+      logPanel.open = true;
+      runStatus.textContent = 'Containment check passed. Container removed.';
+      return;
+    }
+    chart.src = 'data:image/png;base64,' + result.chart;
+    chart.hidden = false;
+    runStatus.textContent = 'Analysis complete.';
+  } catch (error) {
+    runStatus.textContent = error.message;
+  } finally {
+    question.disabled = csv.disabled = sample.disabled = containment.disabled = false;
+    upload.disabled = !csv.files.length;
+  }
+}
+
+csv.addEventListener('change', () => { upload.disabled = !csv.files.length; });
+form.addEventListener('submit', event => {
+  event.preventDefault();
+  if (csv.files.length) analyze(csv.files[0]);
+});
+sample.addEventListener('click', () => analyze());
+containment.addEventListener('click', () => analyze(undefined, true));
+</script>
+</body>
+</html>

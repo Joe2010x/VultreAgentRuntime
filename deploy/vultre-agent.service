@@ -1,0 +1,27 @@
+[Unit]
+Description=Vultre Agent Runtime
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+User=vultre-agent
+SupplementaryGroups=docker
+WorkingDirectory=/opt/vultre-agent
+EnvironmentFile=/etc/vultre-agent/inference.env
+Environment=VULTRE_PUBLIC_DEMO=1 VULTRE_SANDBOX_RUNTIME=runsc VULTRE_PREBUILT=1
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=DOCKER_CONFIG=/opt/vultre-agent/.docker
+ExecStartPre=/usr/bin/docker image inspect vultre-agent-runner:local
+ExecStart=/opt/vultre-agent/.venv/bin/python -m uvicorn web.app:app --host 127.0.0.1 --port 8000 --workers 1 --limit-concurrency 24
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/tmp
+PrivateTmp=false
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target
